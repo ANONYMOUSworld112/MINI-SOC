@@ -1,0 +1,41 @@
+title: Lateral Movement via PsExec
+id: lm-001-psexec-detection
+status: production
+description: |
+  Detects the use of PsExec or similar remote execution tools for lateral
+  movement. PsExec creates a service on the target system (PSEXESVC) and
+  generates specific Event IDs.
+references:
+  - https://attack.mitre.org/techniques/T1570/
+  - https://attack.mitre.org/techniques/T1021/002/
+author: SOC Team
+date: 2024/02/01
+modified: 2024/06/01
+tags:
+  - attack.lateral_movement
+  - attack.t1570
+  - attack.t1021.002
+  - attack.execution
+  - attack.t1569.002
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_process:
+    process_name|endswith:
+      - 'psexec.exe'
+      - 'psexec64.exe'
+      - 'PSEXESVC.exe'
+  selection_service:
+    event_id: '7045'
+    command_line|contains: 'PSEXESVC'
+  selection_pipe:
+    event_id: '17'
+    command_line|contains:
+      - '\\PSEXESVC'
+      - '\\RemCom'
+  condition: selection_process or selection_service or selection_pipe
+falsepositives:
+  - Authorized system administration
+  - Software deployment tools
+level: high

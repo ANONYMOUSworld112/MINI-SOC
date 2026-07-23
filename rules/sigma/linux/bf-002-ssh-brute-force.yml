@@ -1,0 +1,33 @@
+title: SSH Brute Force Attempt - Linux
+id: bf-002-ssh-brute-force
+status: production
+description: |
+  Detects multiple failed SSH login attempts indicating brute force or
+  password spraying attacks against Linux systems.
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://attack.mitre.org/techniques/T1021/004/
+author: SOC Team
+date: 2024/01/20
+modified: 2024/06/01
+tags:
+  - attack.credential_access
+  - attack.t1110
+  - attack.t1110.003
+logsource:
+  category: authentication
+  product: linux
+detection:
+  selection:
+    source_type: linux
+    process_name: sshd
+    action: failure
+  condition: selection
+  count:
+    field: source_ip
+    threshold: 5
+    timeframe: 5m
+falsepositives:
+  - Automated backup systems with expired credentials
+  - Monitoring tools with misconfigured authentication
+level: high

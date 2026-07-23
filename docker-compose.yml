@@ -1,0 +1,132 @@
+###############################################################################
+# Enterprise SOC Platform — Docker Compose
+# Production-grade stack: Backend, Frontend, PostgreSQL, Redis
+# For development, the backend uses SQLite by default (zero-dependency start)
+###############################################################################
+
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────────────────────
+  # PostgreSQL — Primary Data Store
+  # ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: soc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-soc_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-soc_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-S0c_Pl@tf0rm_2024!}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-soc_admin} -d ${POSTGRES_DB:-soc_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - soc-network
+
+  # ─────────────────────────────────────────────────────────
+  # Redis — Caching, Session Store, Pub/Sub
+  # ─────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: soc-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-R3d1s_S0c_2024!}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-R3d1s_S0c_2024!}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - soc-network
+
+  # ─────────────────────────────────────────────────────────
+  # Backend — FastAPI SOC Platform API
+  # ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: soc-backend
+    restart: unless-stopped
+    environment:
+      # Application
+      APP_NAME: "Enterprise SOC Platform"
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+
+      # Database (use PostgreSQL in production)
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-soc_admin}:${POSTGRES_PASSWORD:-S0c_Pl@tf0rm_2024!}@postgres:5432/${POSTGRES_DB:-soc_platform}
+
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-R3d1s_S0c_2024!}@redis:6379/0
+
+      # Security
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-super-secret-jwt-key-change-in-production-2024}
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 15
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+
+      # CORS
+      CORS_ORIGINS: '["http://localhost:3000","http://frontend:3000"]'
+
+      # Features
+      ENABLE_SIMULATOR: ${ENABLE_SIMULATOR:-true}
+      ENABLE_SEED_DATA: ${ENABLE_SEED_DATA:-true}
+      SIMULATOR_INTERVAL_SECONDS: ${SIMULATOR_INTERVAL_SECONDS:-30}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_data:/app/data
+    networks:
+      - soc-network
+
+  # ─────────────────────────────────────────────────────────
+  # Frontend — Next.js SOC Dashboard
+  # ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: soc-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+      NEXT_PUBLIC_APP_NAME: "Sentinel SOC"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    networks:
+      - soc-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_data:
+    driver: local
+
+networks:
+  soc-network:
+    driver: bridge
+    name: soc-platform-network

@@ -1,0 +1,36 @@
+title: DNS Tunneling Detection
+id: dns-001-tunneling-detection
+status: production
+description: |
+  Detects potential DNS tunneling activity based on unusually long DNS queries,
+  high entropy subdomains, and excessive query rates to a single domain.
+references:
+  - https://attack.mitre.org/techniques/T1071/004/
+  - https://attack.mitre.org/techniques/T1048/
+author: SOC Team
+date: 2024/03/15
+modified: 2024/06/01
+tags:
+  - attack.command_and_control
+  - attack.t1071.004
+  - attack.exfiltration
+  - attack.t1048
+logsource:
+  category: dns
+  product: network
+detection:
+  selection:
+    source_type: network
+    category: dns_query
+  selection_suspicious:
+    command_line|re: '^[a-zA-Z0-9]{30,}\.'
+  condition: selection and selection_suspicious
+  count:
+    field: hostname
+    threshold: 50
+    timeframe: 5m
+falsepositives:
+  - CDN services with long subdomain names
+  - Legitimate DNS-based services
+  - Anti-spam DNSBL lookups
+level: high

@@ -1,0 +1,33 @@
+title: Brute Force Login Attempt - Multiple Failed Logins
+id: bf-001-multiple-failed-logins
+status: production
+description: |
+  Detects multiple failed login attempts from a single source IP address,
+  indicating a potential brute force attack against Windows authentication.
+references:
+  - https://attack.mitre.org/techniques/T1110/
+  - https://docs.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4625
+author: SOC Team
+date: 2024/01/15
+modified: 2024/06/01
+tags:
+  - attack.credential_access
+  - attack.t1110
+  - attack.t1110.001
+logsource:
+  category: authentication
+  product: windows
+detection:
+  selection:
+    event_id: '4625'
+    source_type: windows
+  condition: selection
+  count:
+    field: source_ip
+    threshold: 5
+    timeframe: 5m
+falsepositives:
+  - Misconfigured service accounts
+  - Password rotation scripts
+  - Users with expired passwords
+level: high

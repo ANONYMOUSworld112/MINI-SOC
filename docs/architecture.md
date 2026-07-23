@@ -1,0 +1,427 @@
+# 🏗️ Architecture Documentation — Sentinel SOC Platform
+
+## Table of Contents
+
+- [System Architecture](#system-architecture)
+- [Component Architecture](#component-architecture)
+- [Data Flow](#data-flow)
+- [Database Schema](#database-schema)
+- [API Architecture](#api-architecture)
+- [Security Architecture](#security-architecture)
+- [Deployment Architecture](#deployment-architecture)
+
+---
+
+## System Architecture
+
+### High-Level Overview
+
+The Sentinel SOC Platform follows a **modular monolith** architecture that is designed to be split into microservices when scaling demands. The system is organized into distinct bounded contexts following Domain-Driven Design (DDD) principles.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          PRESENTATION LAYER                            │
+│                                                                         │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────┐  │
+│  │  Executive   │  │  SOC Ops     │  │  MITRE     │  │  Incident    │  │
+│  │  Dashboard   │  │  Dashboard   │  │  Matrix    │  │  Workbench   │  │
+│  └─────────────┘  └──────────────┘  └────────────┘  └──────────────┘  │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────┐  │
+│  │  Log Search  │  │  Threat      │  │  Hunt      │  │  AI Copilot  │  │
+│  │  Explorer    │  │  Intel Hub   │  │  Workspace │  │  Chat        │  │
+│  └─────────────┘  └──────────────┘  └────────────┘  └──────────────┘  │
+│                        Next.js 14 (App Router)                         │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │ REST API + WebSocket
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           API GATEWAY LAYER                            │
+│                                                                         │
+│  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌──────────────────────┐  │
+│  │  Auth    │  │  Rate     │  │  CORS    │  │  Request Logging     │  │
+│  │  Guard   │  │  Limiter  │  │  Handler │  │  & Audit Trail       │  │
+│  └──────────┘  └───────────┘  └──────────┘  └──────────────────────┘  │
+│                          FastAPI Middleware                             │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         APPLICATION LAYER                              │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  Auth        │  │  Asset       │  │  Ingestion   │                 │
+│  │  Service     │  │  Service     │  │  Service     │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  Detection   │  │  Correlation │  │  Risk        │                 │
+│  │  Engine      │  │  Engine      │  │  Engine      │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  MITRE       │  │  Threat      │  │  Incident    │                 │
+│  │  Service     │  │  Intel Svc   │  │  Service     │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  Search      │  │  Dashboard   │  │  Copilot     │                 │
+│  │  Service     │  │  Service     │  │  Service     │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+│                    Python / AsyncIO Services                           │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        INFRASTRUCTURE LAYER                            │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  PostgreSQL  │  │  Redis       │  │  WebSocket   │                 │
+│  │  (Primary)   │  │  (Cache/PubS)│  │  Manager     │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                 │
+│  │  SQLite      │  │  File        │  │  Event       │                 │
+│  │  (Dev Mode)  │  │  Storage     │  │  Simulator   │                 │
+│  └──────────────┘  └──────────────┘  └──────────────┘                 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Component Architecture
+
+### Backend Components
+
+#### 1. Authentication & Authorization Service
+- JWT-based authentication with access and refresh tokens
+- Role-Based Access Control (RBAC) with 6 predefined roles
+- Password hashing with bcrypt
+- Token rotation and revocation
+
+#### 2. Ingestion & Normalization Service
+- Multi-format log parser (Windows Event, Syslog, Suricata EVE, Auditd)
+- ECS-compatible normalized schema
+- Field extraction and validation
+- Source identification and tagging
+
+#### 3. Enrichment Pipeline
+- GeoIP enrichment for IP addresses
+- Asset inventory correlation
+- Threat intelligence IOC matching
+- MITRE ATT&CK technique mapping
+
+#### 4. Detection Engine
+- Sigma rule parser and evaluator
+- Field-based condition matching
+- Wildcard and regex support
+- Rule performance tracking
+- False positive rate monitoring
+
+#### 5. Correlation Engine
+- Multi-event pattern matching
+- Time-window based correlation
+- Cross-source event linking
+- Threshold-based alerting
+- Configurable correlation rules
+
+#### 6. Risk Scoring Engine
+- Composite risk score calculation
+- Dynamic weight adjustment
+- Asset criticality integration
+- Threat intelligence score contribution
+- Behavioral anomaly scoring
+
+#### 7. MITRE ATT&CK Engine
+- Complete framework data (14 tactics, 200+ techniques)
+- Detection rule mapping
+- Coverage matrix generation
+- Gap analysis reporting
+
+#### 8. Incident Management Service
+- Full lifecycle case management
+- SLA tracking and escalation
+- Evidence collection and storage
+- Timeline generation
+- Assignment and workload management
+
+#### 9. AI Security Copilot
+- Rule-based alert analysis
+- Contextual investigation guidance
+- MITRE technique explanation
+- Report generation
+- Detection recommendation
+
+---
+
+## Data Flow
+
+### Log Ingestion Pipeline
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  Raw     │───▶│  Parser  │───▶│  Normal- │───▶│  Valida- │
+│  Log     │    │          │    │  izer    │    │  tor     │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+                                                     │
+                                                     ▼
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  Alert   │◀───│  Detect  │◀───│  Enrich  │◀───│  Asset   │
+│  Engine  │    │  Engine  │    │  Service │    │  Correl. │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+     │               │
+     ▼               ▼
+┌──────────┐    ┌──────────┐
+│  Risk    │    │  Correl. │
+│  Score   │    │  Engine  │
+└──────────┘    └──────────┘
+     │               │
+     ▼               ▼
+┌──────────────────────────┐
+│    Alert Generation      │
+│    & Notification        │
+└──────────────────────────┘
+     │
+     ▼
+┌──────────────────────────┐
+│    Incident Creation     │
+│    (if threshold met)    │
+└──────────────────────────┘
+```
+
+### Detection Rule Evaluation
+
+```
+Incoming Normalized Event
+         │
+         ▼
+┌─────────────────────────┐
+│  Load Active Sigma      │
+│  Detection Rules        │
+│  (cached in memory)     │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐     ┌─────────────────────┐
+│  Match Event Fields     │────▶│  Rule Matched?      │
+│  Against Rule           │     │                     │
+│  Conditions             │     │  YES → Generate     │
+│                         │     │        Alert        │
+│  • Field comparison     │     │                     │
+│  • Wildcard matching    │     │  NO → Next Rule     │
+│  • Aggregation check    │     │                     │
+└─────────────────────────┘     └─────────────────────┘
+```
+
+---
+
+## Database Schema
+
+### Entity Relationship Diagram
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│    User      │     │    Asset     │     │  LogEvent    │
+├──────────────┤     ├──────────────┤     ├──────────────┤
+│ id (UUID)    │     │ id (UUID)    │     │ id (UUID)    │
+│ username     │     │ hostname     │     │ timestamp    │
+│ email        │     │ ip_address   │     │ source_type  │
+│ password_hash│     │ asset_type   │     │ source_ip    │
+│ role         │     │ os           │     │ dest_ip      │
+│ is_active    │     │ criticality  │     │ hostname     │
+│ created_at   │     │ department   │     │ event_id     │
+│ last_login   │     │ location     │     │ severity     │
+└──────┬───────┘     │ status       │     │ category     │
+       │             │ agent_version│     │ raw_log      │
+       │             └──────┬───────┘     │ asset_id (FK)│
+       │                    │             └──────┬───────┘
+       │                    │                    │
+       ▼                    ▼                    ▼
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Incident   │     │    Alert     │     │ DetectionRule│
+├──────────────┤     ├──────────────┤     ├──────────────┤
+│ id (UUID)    │     │ id (UUID)    │     │ id (UUID)    │
+│ title        │     │ title        │     │ name         │
+│ description  │     │ severity     │     │ sigma_rule   │
+│ severity     │     │ confidence   │     │ severity     │
+│ status       │     │ risk_score   │     │ mitre_tactics│
+│ assigned_to  │     │ status       │     │ mitre_techs  │
+│ sla_deadline │     │ source       │     │ enabled      │
+│ created_at   │     │ rule_id (FK) │     │ created_at   │
+│ resolved_at  │     │ asset_id (FK)│     └──────────────┘
+└──────────────┘     │ incident (FK)│
+                     └──────────────┘
+
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│     IOC      │     │ MitreTactic  │     │  AuditLog    │
+├──────────────┤     ├──────────────┤     ├──────────────┤
+│ id (UUID)    │     │ id           │     │ id (UUID)    │
+│ value        │     │ tactic_id    │     │ user_id      │
+│ type         │     │ name         │     │ action       │
+│ severity     │     │ description  │     │ resource     │
+│ source       │     │ techniques[] │     │ details      │
+│ is_active    │     └──────────────┘     │ ip_address   │
+│ first_seen   │                          │ timestamp    │
+│ last_seen    │                          └──────────────┘
+└──────────────┘
+```
+
+---
+
+## API Architecture
+
+### Route Structure
+
+```
+/api/v1/
+├── /auth
+│   ├── POST   /login          # Authenticate user
+│   ├── POST   /register       # Create new user (admin only)
+│   ├── POST   /refresh        # Refresh access token
+│   └── GET    /me             # Get current user profile
+├── /assets
+│   ├── GET    /               # List assets (paginated)
+│   ├── POST   /               # Create asset
+│   ├── GET    /{id}           # Get asset details
+│   ├── PATCH  /{id}           # Update asset
+│   └── DELETE /{id}           # Delete asset
+├── /alerts
+│   ├── GET    /               # List alerts (filtered)
+│   ├── GET    /{id}           # Get alert details
+│   ├── PATCH  /{id}           # Update alert status
+│   └── GET    /stats          # Alert statistics
+├── /incidents
+│   ├── GET    /               # List incidents
+│   ├── POST   /               # Create incident
+│   ├── GET    /{id}           # Get incident details
+│   ├── PATCH  /{id}           # Update incident
+│   ├── POST   /{id}/notes     # Add note
+│   └── GET    /{id}/timeline  # Get timeline
+├── /logs
+│   ├── POST   /ingest         # Ingest log events
+│   ├── GET    /search         # Search logs
+│   └── GET    /stats          # Ingestion statistics
+├── /detections
+│   ├── GET    /rules          # List detection rules
+│   ├── POST   /rules          # Create rule
+│   ├── PATCH  /rules/{id}     # Update rule
+│   ├── POST   /rules/{id}/test # Test rule
+│   └── DELETE /rules/{id}     # Delete rule
+├── /correlation
+│   ├── GET    /rules          # List correlation rules
+│   ├── POST   /rules          # Create correlation rule
+│   └── GET    /triggers       # Recent correlation triggers
+├── /threat-intel
+│   ├── GET    /iocs           # List IOCs
+│   ├── POST   /iocs           # Create IOC
+│   ├── GET    /feeds          # List threat feeds
+│   └── POST   /lookup         # Lookup indicator
+├── /mitre
+│   ├── GET    /tactics        # List tactics
+│   ├── GET    /techniques     # List techniques
+│   ├── GET    /matrix         # Get coverage matrix
+│   └── GET    /coverage       # Coverage statistics
+├── /dashboard
+│   ├── GET    /executive      # Executive dashboard data
+│   ├── GET    /soc            # SOC dashboard data
+│   ├── GET    /system         # System health data
+│   └── GET    /metrics        # Platform metrics
+├── /search
+│   ├── GET    /global         # Global search across entities
+│   └── GET    /saved          # Saved searches
+├── /copilot
+│   └── POST   /analyze        # AI analysis request
+├── /health
+│   └── GET    /               # Health check
+├── /audit
+│   └── GET    /logs           # Audit log viewer
+└── /ws
+    └── /live-feed             # WebSocket real-time feed
+```
+
+---
+
+## Security Architecture
+
+### Authentication Flow
+
+```
+┌────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│ Client │────▶│  Login   │────▶│  Verify  │────▶│  Issue   │
+│        │     │  Request │     │  Creds   │     │  JWT     │
+│        │◀────│          │◀────│          │◀────│  Tokens  │
+└────────┘     └──────────┘     └──────────┘     └──────────┘
+     │
+     │  (access_token in Authorization header)
+     ▼
+┌────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+│ API    │────▶│  Verify  │────▶│  Check   │────▶│  Execute │
+│ Request│     │  JWT     │     │  RBAC    │     │  Handler │
+└────────┘     └──────────┘     └──────────┘     └──────────┘
+```
+
+### RBAC Matrix
+
+| Resource | Admin | SOC Manager | Analyst L3 | Analyst L2 | Analyst L1 | Auditor |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| User Management | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Detection Rules | ✅ | ✅ | ✅ | ❌ | ❌ | 👁️ |
+| Incidents | ✅ | ✅ | ✅ | ✅ | ✅ | 👁️ |
+| Alerts | ✅ | ✅ | ✅ | ✅ | ✅ | 👁️ |
+| Assets | ✅ | ✅ | ✅ | ✅ | 👁️ | 👁️ |
+| Threat Intel | ✅ | ✅ | ✅ | ✅ | 👁️ | 👁️ |
+| Audit Logs | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| Configuration | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Dashboards | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+✅ Full Access | 👁️ Read Only | ❌ No Access
+
+---
+
+## Deployment Architecture
+
+### Docker Compose (Development/Lab)
+
+```
+┌─────────────────────────────────────────────────┐
+│                Docker Host                       │
+│                                                   │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐         │
+│  │Frontend │  │Backend  │  │Postgres │         │
+│  │:3000    │  │:8000    │  │:5432    │         │
+│  └────┬────┘  └────┬────┘  └────┬────┘         │
+│       │            │            │               │
+│       └────────────┼────────────┘               │
+│                    │                             │
+│              ┌─────┴─────┐                      │
+│              │  Redis    │                      │
+│              │  :6379    │                      │
+│              └───────────┘                      │
+│                                                   │
+│         soc-platform-network (bridge)            │
+└─────────────────────────────────────────────────┘
+```
+
+### Kubernetes (Production)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                     │
+│                                                           │
+│  ┌─────────────────┐  ┌─────────────────┐               │
+│  │  Ingress        │  │  ConfigMaps     │               │
+│  │  Controller     │  │  & Secrets      │               │
+│  └────────┬────────┘  └─────────────────┘               │
+│           │                                               │
+│  ┌────────▼────────┐  ┌─────────────────┐               │
+│  │  Frontend       │  │  Backend        │               │
+│  │  Deployment     │  │  Deployment     │               │
+│  │  (3 replicas)   │  │  (3 replicas)   │               │
+│  └─────────────────┘  └─────────────────┘               │
+│                                                           │
+│  ┌─────────────────┐  ┌─────────────────┐               │
+│  │  PostgreSQL     │  │  Redis          │               │
+│  │  StatefulSet    │  │  StatefulSet    │               │
+│  └─────────────────┘  └─────────────────┘               │
+│                                                           │
+│  ┌─────────────────┐                                     │
+│  │  PersistentVol  │                                     │
+│  │  Claims         │                                     │
+│  └─────────────────┘                                     │
+└─────────────────────────────────────────────────────────┘
+```
